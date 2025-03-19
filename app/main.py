@@ -17,6 +17,15 @@ from langchain.schema import messages_from_dict, messages_to_dict
 from langchain.schema import BaseRetriever
 from pydantic import Field
 from langchain.docstore.document import Document
+from langchain.agents import initialize_agent, AgentType
+from langchain.tools import Tool
+from langchain.tools.retriever import create_retriever_tool
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.agents.format_scratchpad import format_to_openai_functions
+from langchain.agents.output_parsers import OpenAIFunctionsAgentOutputParser
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.callbacks import get_openai_callback
+from langchain.callbacks.base import BaseCallbackHandler
 
 # Import utility functions
 from app.utils import (
@@ -24,6 +33,7 @@ from app.utils import (
     create_vector_store, load_vector_store, save_vector_store,
     update_all_vector_store
 )
+import hashlib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,14 +64,29 @@ class ClearMemoryResponse(BaseModel):
     message: str
     success: bool
 
-# Create a global conversation memory
+class AgentChatQuery(BaseModel):
+    query: str
+    document_ids: Optional[List[str]] = None
+
+class AgentChatResponse(BaseModel):
+    response: str
+    sources: List[str] = []
+
+# Create global memory objects for different modes
 memory = ConversationBufferMemory(
     memory_key="chat_history",
     return_messages=True,
     output_key="answer"
 )
 
-# Helper functions to reduce redundancy
+agent_memory = ConversationBufferWindowMemory(
+    memory_key="chat_history",
+    return_messages=True,
+    k=5,
+    input_key="input",
+    output_key="output"
+)
+
 def create_qa_chain(llm, retriever):
     """Create a conversational retrieval chain"""
     return ConversationalRetrievalChain.from_llm(
@@ -112,6 +137,115 @@ class StaticRetriever(BaseRetriever):
     
     async def aget_relevant_documents(self, query: str) -> List[Document]:
         return self.stored_documents
+
+def create_retrieval_tool(retriever, name="document_search", description=None):
+    """Create a tool for document retrieval"""
+    # Sanitize name to meet OpenAI's function name requirements
+    sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    
+    # Ensure name is within OpenAI's 64-character limit
+    if len(sanitized_name) > 60:
+        name_hash = hashlib.md5(name.encode()).hexdigest()[:8]
+        sanitized_name = f"doc_{name_hash}"
+    
+    if description is None:
+        description = (
+            "Searches the documents to find answers to questions about their content. "
+            "Use this tool whenever you need to access specific information from the documents. "
+            "ALWAYS USE THIS TOOL FIRST before answering any question."
+        )
+    
+    def retrieval_with_sources(query):
+        """Retrieve documents and include sources in the response"""
+        docs = retriever.invoke(query)
+        results = []
+        sources = set()
+        
+        for doc in docs:
+            source_path = doc.metadata.get("source", "unknown")
+            source_name = Path(source_path).name
+            sources.add(source_name)
+            results.append(f"[Content from {source_name}]: {doc.page_content}")
+        
+        # Create sources section
+        sources_list = list(sources)
+        source_list_formatted = "\n".join([f"- {s}" for s in sources_list])
+        source_section = f"""
+
+            !!! DOCUMENT SOURCES !!!
+            {source_list_formatted}
+
+            ⚠️ YOU MUST END YOUR RESPONSE WITH:
+
+            SOURCES:
+            {source_list_formatted}
+
+            FAILURE TO INCLUDE THE SOURCES SECTION EXACTLY AS SHOWN ABOVE WILL RESULT IN REJECTION.
+        """
+        results.append(source_section)
+        
+        # Store the sources for later use
+        retrieved_sources = {"sources": sources_list}
+        
+        return "\n\n".join(results), retrieved_sources
+    
+    return Tool(
+        name=sanitized_name,
+        description=description,
+        func=retrieval_with_sources,
+        return_direct=False
+    )
+
+def create_agent(llm, tools):
+    """Create an agent with a set of tools"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are an assistant for question-answering tasks based on PDF documents.
+
+        Use the following tools to answer the user's question: {tools}
+
+        ⚠️ MANDATORY INSTRUCTIONS:
+        1. You MUST use the search tool before answering ANY question
+        2. After you receive search results, include ALL document sources in your answer
+        3. You MUST end EVERY response with a "SOURCES:" section listing the exact document filenames 
+        4. Format your response as follows:
+
+        Your detailed answer here with information from the documents.
+
+        SOURCES:
+        - document1.pdf
+        - document2.pdf
+
+        The SOURCES section is REQUIRED. Your response will be REJECTED if you don't include it."""
+        ),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
+    
+    agent = initialize_agent(
+        tools=tools, 
+        llm=llm, 
+        agent=AgentType.OPENAI_FUNCTIONS,
+        agent_kwargs={
+            "memory_prompts": [prompt],
+            "memory": agent_memory
+        },
+        verbose=True,
+        handle_parsing_errors=True
+    )
+    
+    return agent
+
+def extract_sources_from_documents(documents) -> List[str]:
+    """Extract unique source filenames from documents"""
+    sources = []
+    for doc in documents:
+        if doc.metadata and "source" in doc.metadata:
+            source_path = doc.metadata["source"]
+            source_name = Path(source_path).name
+            if source_name not in sources:
+                sources.append(source_name)
+    return sources
 
 @app.get("/")
 def read_root():
@@ -255,7 +389,7 @@ async def chat_with_pdf(query: ChatQuery):
             # Create QA chain
             qa_chain = create_qa_chain(llm, all_retriever)
         
-        # Process the query (common path for both cases)
+        # Process the query
         result = qa_chain.invoke({"question": query.query})
         sources = extract_sources_from_result(result)
         
@@ -267,6 +401,226 @@ async def chat_with_pdf(query: ChatQuery):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/agent-chat/", response_model=AgentChatResponse)
+async def agent_chat(query: AgentChatQuery):
+    """Send a query to chat with PDF using an
+    agent that can access multiple document tools."""
+    try:
+        # Set up language model
+        model_name = os.getenv("MODEL_NAME", "gpt-4o-mini")
+        llm = ChatOpenAI(temperature=0.0, model_name=model_name)
+        
+        # Track all tools created for this session
+        all_tools = []
+        
+        # Check if specific document IDs are provided
+        if query.document_ids and len(query.document_ids) > 0:
+            # Validate documents exist
+            missing_docs, missing_indices = validate_document_ids(query.document_ids)
+            
+            if missing_docs:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Documents not found: {', '.join(missing_docs)}"
+                )
+            
+            if missing_indices:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Indices not found for documents: {', '.join(missing_indices)}"
+                )
+            
+            # Create tools for specified documents
+            for doc_id in query.document_ids:
+                try:
+                    vector_store = load_vector_store(f"data/vectorstores/{doc_id}")
+                    retriever = vector_store.as_retriever(
+                        search_type="similarity",
+                        search_kwargs={"k": 3}
+                    )
+                    
+                    tool_name = f"{doc_id[:15]}_search" if len(doc_id) > 15 else f"{doc_id}_search"
+                    
+                    document_tool = create_retrieval_tool(
+                        retriever=retriever, 
+                        name=tool_name,
+                        description=f"Searches within '{doc_id}.pdf' to find relevant information."
+                    )
+                    
+                    all_tools.append(document_tool)
+                    
+                except Exception as e:
+                    logger.warning(f"Error with document {doc_id}: {str(e)}")
+            
+            if not all_tools:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not process any of the specified documents"
+                )
+        else:
+            # Create tools for each indexed document
+            document_dir = "data/documents"
+            vectorstore_dir = "data/vectorstores"
+            
+            if not os.path.exists(document_dir):
+                raise HTTPException(
+                    status_code=404,
+                    detail="No documents directory found. Please upload some PDFs first."
+                )
+            
+            # Check for all PDF files that have corresponding vector stores
+            pdf_files = []
+            if os.path.exists(document_dir):
+                for file in os.listdir(document_dir):
+                    if file.endswith('.pdf'):
+                        document_id = file.replace('.pdf', '')
+                        if os.path.exists(f"{vectorstore_dir}/{document_id}"):
+                            pdf_files.append(document_id)
+            
+            if not pdf_files:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No indexed documents found. Please index some PDFs first."
+                )
+            
+            # Create a tool for each indexed document
+            for doc_id in pdf_files:
+                try:
+                    vector_store = load_vector_store(f"{vectorstore_dir}/{doc_id}")
+                    retriever = vector_store.as_retriever(
+                        search_type="similarity",
+                        search_kwargs={"k": 3}
+                    )
+                    
+                    tool_name = f"{doc_id[:15]}_search" if len(doc_id) > 15 else f"{doc_id}_search"
+                    
+                    document_tool = create_retrieval_tool(
+                        retriever=retriever, 
+                        name=tool_name,
+                        description=f"Searches within '{doc_id}.pdf' to find relevant information."
+                    )
+                    
+                    all_tools.append(document_tool)
+                except Exception as e:
+                    logger.warning(f"Error creating tool for {doc_id}.pdf: {str(e)}")
+            
+            if not all_tools:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not create tools for any indexed documents."
+                )
+            
+            # Log the number of document tools created
+            logger.info(f"Created {len(all_tools)} document tools for agent to use")
+        
+        # Create a single agent with all tools
+        agent = create_agent(llm, all_tools)
+        
+        # Track if tools were actually used
+        tool_was_used = False
+        retrieved_document_sources = []
+        
+        # Process the query with the agent, capturing sources from tool calls
+        with get_openai_callback() as cb:
+            class SourceTracker(BaseCallbackHandler):
+                """A callback handler to track sources from tools"""
+                def __init__(self):
+                    super().__init__()
+                
+                def on_tool_start(self, serialized, input_str, **kwargs):
+                    """Track when a tool is used"""
+                    nonlocal tool_was_used
+                    tool_was_used = True
+                    logger.info(f"Tool used: {serialized.get('name', 'unknown')}")
+                
+                def on_tool_end(self, output, **kwargs):
+                    """Track sources from tool output"""
+                    try:
+                        if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+                            if "sources" in output[1]:
+                                nonlocal retrieved_document_sources
+                                retrieved_document_sources.extend(output[1]["sources"])
+                    except Exception as e:
+                        logger.error(f"Error in SourceTracker.on_tool_end: {e}")
+                
+                # Required error handlers
+                def on_llm_error(self, error, **kwargs): pass
+                def on_chain_error(self, error, **kwargs): pass
+                def on_tool_error(self, error, **kwargs): pass
+            
+            source_tracker = SourceTracker()
+            
+            # Invoke the agent with our callback
+            agent_result = agent.invoke(
+                {"input": query.query},
+                {"callbacks": [source_tracker]}
+            )
+            logger.info(f"Agent used {cb.total_tokens} tokens")
+        
+        # Log the raw response
+        response_text = agent_result["output"]
+        logger.info(f"Tool was used: {tool_was_used}")
+        
+        # Save to memory
+        agent_memory.save_context(
+            {"input": query.query},
+            {"output": response_text}
+        )
+        
+        # Extract sources from response
+        sources = []
+        main_response = response_text
+        
+        # Check for explicit SOURCES section
+        if "SOURCES:" in response_text:
+            parts = response_text.split("SOURCES:")
+            main_response = parts[0].strip()
+            sources_section = parts[1].strip()
+            
+            if not sources_section.strip():
+                logger.info("Empty SOURCES section found")
+            else:
+                source_matches = re.findall(r'(?:^|\n)\s*[-•*]\s*([\w\s\-_.]+\.pdf)', sources_section)
+                if source_matches:
+                    sources = source_matches
+        
+        # If no sources found in the text, use the sources we tracked from tools
+        if not sources and retrieved_document_sources:
+            sources = list(set(retrieved_document_sources))
+            logger.info(f"Using tracked sources: {sources}")
+        
+        # If still no sources found but tools were used, try other extraction methods
+        if not sources and tool_was_used:
+            # Check for DOCUMENT SOURCES section
+            if "=== DOCUMENT SOURCES" in response_text:
+                source_section_match = re.search(r'=== DOCUMENT SOURCES.+?===\s*([\s\S]+?)(?:\n\n|\Z)', response_text)
+                if source_section_match:
+                    section_text = source_section_match.group(1)
+                    source_matches = re.findall(r'[-•*]\s*([\w\s\-_.]+\.pdf)', section_text)
+                    if source_matches:
+                        sources = source_matches
+            
+            # Last resort - extract any PDF filename mentioned
+            if not sources:
+                all_pdf_mentions = re.findall(r'([\w\s\-_.]+\.pdf)', response_text)
+                if all_pdf_mentions:
+                    sources = list(set(all_pdf_mentions))
+        
+        # If we have explicit document IDs but no sources were found
+        if not sources and query.document_ids and len(query.document_ids) > 0 and tool_was_used:
+            sources = [f"{doc_id}.pdf" for doc_id in query.document_ids]
+        
+        return AgentChatResponse(
+            response=main_response,
+            sources=sources
+        )
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Agent error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/clear-memory/", response_model=ClearMemoryResponse)
@@ -289,6 +643,42 @@ async def clear_memory():
             message=f"Error clearing memory: {str(e)}",
             success=False
         )
+
+@app.post("/clear-agent-memory/", response_model=ClearMemoryResponse)
+async def clear_agent_memory():
+    """Clear the agent conversation memory"""
+    try:
+        global agent_memory
+        agent_memory = ConversationBufferWindowMemory(
+            memory_key="chat_history", 
+            return_messages=True,
+            k=5,
+            input_key="input",
+            output_key="output"
+        )
+        
+        return ClearMemoryResponse(
+            message="Agent conversation memory cleared successfully",
+            success=True
+        )
+    except Exception as e:
+        return ClearMemoryResponse(
+            message=f"Error clearing agent memory: {str(e)}",
+            success=False
+        )
+
+@app.get("/agent-memory/", response_model=Dict[str, Any])
+async def get_agent_memory():
+    """Get the agent conversation memory"""
+    try:
+        memory_vars = agent_memory.load_memory_variables({})
+        messages = agent_memory.chat_memory.messages
+        history_dicts = messages_to_dict(messages)
+        
+        return {"history": history_dicts}
+    except Exception as e:
+        logger.error(f"Error accessing agent memory: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/memory/", response_model=Dict[str, Any])
 async def get_memory():
