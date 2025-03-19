@@ -378,15 +378,15 @@ def create_example_evaluation_file(output_path: str):
     example_data = [
         {
             "query": "What are the key evaluation metrics for text-to-SQL systems?",
-            "document_ids": ["Rajkumar_et_al_2022_Evaluating_the_Text_to_SQL"],
+            "document_ids": ["Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L"],
             "expected_answer": "The key evaluation metrics include percentage of valid SQL predictions, execution accuracy, and test-suite execution accuracy.",
-            "expected_sources": ["Rajkumar_et_al_2022_Evaluating_the_Text_to_SQL.pdf"]
+            "expected_sources": ["Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf"]
         },
         {
             "query": "Summarize the challenges in prompt engineering for LLMs",
-            "document_ids": ["Chang_and_Fosler_Lussier_2023_How_to_Prompt"],
-            "expected_answer": "",  # Empty string means we're not checking the answer
-            "expected_sources": ["Chang_and_Fosler_Lussier_2023_How_to_Prompt.pdf"]
+            "document_ids": ["Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer"],
+            "expected_answer": "",
+            "expected_sources": ["Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer.pdf"]
         }
     ]
     
