@@ -1,0 +1,72 @@
+[
+  {
+    "query": "What are the key findings from Rajkumar's paper on evaluating Text-to-SQL capabilities of large language models?",
+    "expected_answer": "Rajkumar's paper found that generative language models like Codex provide a strong baseline for Text-to-SQL tasks, with few-shot learning being competitive with fine-tuned models. The study identified various error types, including semantic incorrect behaviors and ambiguous correct behaviors, and suggested that prompt design plays a crucial role in performance.",
+    "expected_sources": ["Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf"]
+  },
+  {
+    "query": "Compare the different approaches to Text-to-SQL tasks across the papers by Rajkumar, Chang, Katsogiannis, and Zhang.",
+    "expected_answer": "The papers present different approaches to Text-to-SQL tasks. Rajkumar focuses on evaluating Codex without fine-tuning, showing it can achieve competitive performance through few-shot learning. Chang investigates prompt construction strategies across zero-shot and few-shot settings, emphasizing the importance of including table content and schema. Katsogiannis provides a survey of deep learning approaches, highlighting the challenges of generalization. Zhang benchmarks LLM capabilities, noting their transformative impact through advanced reasoning and in-context learning compared to traditional methods.",
+    "expected_sources": [
+      "Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf",
+      "Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer.pdf",
+      "Katsogiannis_Meimarakis_and_Koutrika_2023_A_survey_on_deep_learning_approaches_for_text_to_S.pdf",
+      "Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"
+    ]
+  },
+  {
+    "query": "How does prompt design affect the performance of large language models in Text-to-SQL tasks according to Chang's research?",
+    "expected_answer": "According to Chang's research, prompt design significantly affects Text-to-SQL performance in LLMs. The study found that prompt construction, length, and structure are crucial factors. Sensitivity to prompt length was observed, with both too short and too long prompts hindering performance. The research emphasizes the importance of in-context learning capabilities, where LLMs can perform Text-to-SQL tasks with minimal training when provided with appropriate prompts containing database information.",
+    "expected_sources": ["Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer.pdf"]
+  },
+  {
+    "query": "What are the main challenges in benchmarking Text-to-SQL models according to Zhang et al.?",
+    "expected_answer": "According to Zhang et al., the main challenges in benchmarking Text-to-SQL models include the lack of consensus on effective prompt templates, inadequate exploration of sub-tasks within the Text-to-SQL process, the need for more granular benchmarking that reflects the multifaceted nature of the task, and the absence of comprehensive evaluation of LLM capabilities. The authors propose constructing more comprehensive testing benchmarks that incorporate various related tasks to better evaluate LLMs across the full spectrum of Text-to-SQL processes.",
+    "expected_sources": ["Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"]
+  },
+  {
+    "query": "Explain the taxonomy of deep learning approaches for Text-to-SQL presented by Katsogiannis et al.",
+    "expected_answer": "Katsogiannis et al. present a taxonomy of deep learning approaches for Text-to-SQL based on six axes: Schema Linking (connecting natural language to database schemas), Natural Language Representation (how queries are represented), Input Encoding (methods to encode input data), Output Decoding (converting model outputs to SQL), Neural Training (methodologies to train neural networks), and Output Refinement (ensuring syntactic and semantic correctness). This taxonomy enables detailed analysis of different approaches and identifies research opportunities in the field.",
+    "expected_sources": ["Katsogiannis_Meimarakis_and_Koutrika_2023_A_survey_on_deep_learning_approaches_for_text_to_S.pdf"]
+  },
+  {
+    "query": "What metrics are used to evaluate Text-to-SQL models, and what are their limitations?",
+    "expected_answer": "Metrics used to evaluate Text-to-SQL models include Valid/Executable SQL (VA), Execution Accuracy (EX), and Test-Suite Accuracy (TS). Limitations include sensitivity to prompt design, discrepancies between automated metrics and human assessments, and challenges in evaluation consistency across different datasets.",
+    "expected_sources": [
+      "Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf",
+      "Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"
+    ]
+  },
+  {
+    "query": "What future research directions are suggested in the papers regarding improving Text-to-SQL capabilities?",
+    "expected_answer": "Future research directions suggested across the papers include model fine-tuning and scaling for improved performance, systematic studies on prompt engineering strategies, incorporating intermediate reasoning and self-debugging capabilities, addressing schema linking challenges, creating intelligent data assistants to improve user interaction, exploring the integration of advanced reasoning techniques in LLMs, and developing better evaluation methodologies to assess system performance accurately.",
+    "expected_sources": [
+      "Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf",
+      "Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer.pdf",
+      "Katsogiannis_Meimarakis_and_Koutrika_2023_A_survey_on_deep_learning_approaches_for_text_to_S.pdf",
+      "Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"
+    ]
+  },
+  {
+    "query": "What specific error types were identified by Rajkumar et al. in their evaluation of Text-to-SQL models?",
+    "expected_answer": "Rajkumar et al. identified several specific error types in Text-to-SQL models: Semantic Incorrect errors (universally viewed as incorrect), Shortcut Errors (where models use table values or world knowledge instead of question literals), GROUP BY Convention Errors (incorrectly grouping on non-primary-key columns), Ambiguous Correct errors (semantically different from gold queries but considered acceptable by human annotators), and Invalid SQL errors including ambiguous column names. A significant portion of erroneous predictions were actually acceptable to human annotators despite being penalized by automated evaluation.",
+    "expected_sources": ["Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf"]
+  },
+  {
+    "query": "How do the Spider and WikiSQL benchmarks differ in terms of complexity and evaluation methodology?",
+    "expected_answer": "Spider is more complex than WikiSQL, featuring 10,000+ NLQs across 200 databases from 138 domains with multi-table queries and complex SQL clauses. WikiSQL is simpler with 80,000 question-SQL pairs focusing on single-table databases with less complex queries. For evaluation, Spider uses Execution Accuracy (EX) and Exact Matching (EM), and includes more challenging variants like Spider-Realistic. WikiSQL uses simpler evaluation focused on generated SQL accuracy but has been criticized for not reflecting real-world query complexity. Overall, Spider is more challenging and realistic for evaluating advanced text-to-SQL systems.",
+    "expected_sources": [
+      "Katsogiannis_Meimarakis_and_Koutrika_2023_A_survey_on_deep_learning_approaches_for_text_to_S.pdf",
+      "Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"
+    ]
+  },
+  {
+    "query": "What statistical findings are presented across the papers regarding the performance of different model types on Text-to-SQL tasks?",
+    "expected_answer": "Statistical findings across the papers show that larger models generally perform better on Text-to-SQL tasks. Rajkumar et al. found Codex achieved 67% execution accuracy on Spider and 91.6% valid SQL predictions compared to smaller models like T5-base (72.7%). Chang and Fosler-Lussier discovered that with just 4 examples, performance differences between models like Codex and ChatGPT diminished significantly. Zhang et al. identified performance disparities among LLMs and suggested optimal in-context learning approaches. The findings indicate that specialized models perform better, and prompt engineering with relevant examples enhances performance significantly.",
+    "expected_sources": [
+      "Rajkumar_et_al__2022_Evaluating_the_Text_to_SQL_Capabilities_of_Large_L.pdf",
+      "Chang_and_Fosler_Lussier_2023_How_to_Prompt_LLMs_for_Text_to_SQL_A_Study_in_Zer.pdf",
+      "Zhang_et_al__2024_Benchmarking_the_Text_to_SQL_Capability_of_Large_L.pdf"
+    ]
+  }
+]

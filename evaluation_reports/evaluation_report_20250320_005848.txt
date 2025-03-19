@@ -1,0 +1,31 @@
+============================================================
+CHAT WITH PDF EVALUATION REPORT
+Generated: 2025-03-20 00:58:48
+============================================================
+
+ENDPOINT: chat
+========================================
+Queries processed: 10
+
+RESPONSE TIME (seconds)
+----------------------------------------
+  Mean:   15.75
+  Median: 16.50
+  Min:    6.54
+  Max:    35.39
+  StDev:  8.82
+
+TEXT SIMILARITY SCORES
+----------------------------------------
+  Embedding Similarity: 0.9533
+
+SOURCE ATTRIBUTION METRICS
+----------------------------------------
+  Precision:     0.8917
+  Recall:        1.0000
+  F1 Score:      0.9324
+  All Sources Found Rate: 100.00%
+
+
+============================================================
+

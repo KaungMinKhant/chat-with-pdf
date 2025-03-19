@@ -1,0 +1,21 @@
+{
+  "chat": {
+    "count": 10,
+    "response_time": {
+      "mean": 15.748254227638245,
+      "median": 16.500722527503967,
+      "min": 6.54094123840332,
+      "max": 35.38863921165466,
+      "stdev": 8.821395092641561
+    },
+    "text_similarity": {
+      "embedding": 0.9533015021203274
+    },
+    "source_attribution": {
+      "precision": 0.8916666666666666,
+      "recall": 1.0,
+      "f1": 0.9323809523809524,
+      "all_found_rate": 1
+    }
+  }
+}
